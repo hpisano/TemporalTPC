@@ -1,0 +1,159 @@
+# ==================== POPULATION GROWTH FUNCTIONS =====================
+
+#' Logistic growth model
+#' 
+#' @param N Population size (numeric or function N(t))
+#' @param r Intrinsic growth rate (numeric or function r(t))
+#' @param alpha Density-dependent mortality coefficient (numeric or function alpha(t))
+#' @return Rate of change dN/dt (numeric or function dN/dt(t))
+logistic_growth <- function(N, r, alpha) {
+  # Determine if we need to return a function
+  is_dynamic <- is.function(N) || is.function(r) || is.function(alpha)
+  
+  if (is_dynamic) {
+    # Return a function that can be evaluated at any time t
+    return(function(t) {
+      # Evaluate N at time t (if it's a function)
+      N_val <- if (is.function(N)) N(t) else N
+      
+      # Evaluate r at time t (if it's a function)
+      r_val <- if (is.function(r)) r(t) else r
+      
+      # Evaluate alpha at time t (if it's a function)
+      alpha_val <- if (is.function(alpha)) alpha(t) else alpha
+      
+      # Compute and return the rate
+      return((r_val - alpha_val * N_val) * N_val)
+    })
+  } else {
+    # All inputs are numeric, compute directly
+    return((r - alpha * N) * N)
+  }
+}
+
+#' 3-parameter adimensional population growth model
+#' 
+#' @param N_prime Normalized population size (numeric or function N'(t'))
+#' @param P_time Scaled time parameter (numeric or function P_time(t'))
+#' @param u Thermal response function (numeric or function u(t'))
+#' @return Rate of change dN'/dt' (numeric or function dN'/dt'(t'))
+normalized_3dim_growth <- function(N_prime, P_time, u) {
+  
+  # Check if we need dynamic evaluation
+  is_dynamic <- is.function(N_prime) || is.function(P_time) || is.function(u)
+  
+  if (is_dynamic) {
+    # Create a function for dynamic evaluation
+    return(function(t_prime) {
+      # Handle vector input
+      if (length(t_prime) > 1) {
+        return(sapply(t_prime, function(tp) {
+          N_val <- if (is.function(N_prime)) N_prime(tp) else N_prime
+          P_val <- if (is.function(P_time)) P_time(tp) else P_time
+          u_val <- if (is.function(u)) u(tp) else u
+          return(P_val * (u_val * N_val - N_val^2))
+        }))
+      } else {
+        # Scalar input
+        N_val <- if (is.function(N_prime)) N_prime(t_prime) else N_prime
+        P_val <- if (is.function(P_time)) P_time(t_prime) else P_time
+        u_val <- if (is.function(u)) u(t_prime) else u
+        return(P_val * (u_val * N_val - N_val^2))
+      }
+    })
+  } else {
+    # Static computation
+    return(P_time * (u * N_prime - N_prime^2))
+  }
+}
+
+#' Create continuous ODE system for all population models
+#' 
+#' @param r_func Continuous function r(t) for dynamic model
+#' @param alpha Density-dependent mortality coefficient
+#' @param N0 Initial population size
+#' @return List of ODE functions for dynamic, null, slow, and fast models
+create_population_systems <- function(r_func, alpha, N0) {
+  # Extract mean r value once (for slow model)
+  # We need to evaluate over a reasonable time range to get mean
+  # Let's use a fixed time range for mean calculation
+  t_range <- c(0, 100)  # Adjust as needed
+  t_eval <- seq(t_range[1], t_range[2], length.out = 1000)
+  r_vals <- r_func(t_eval)
+  r_mean <- mean(r_vals)
+  
+  # Create constant functions for null and slow models
+  r_null_func <- function(t) r_func(0)  # Initial r value (or any constant)
+  r_slow_func <- function(t) r_mean
+  
+  # Return ODE functions for each model
+  list(
+    # Dynamic model ODE
+    dynamic = function(t, y, params) {
+      r <- r_func(t)
+      N <- y[1]
+      dN <- (r - alpha * N) * N
+      list(dN)
+    },
+    
+    # Null model ODE (constant r at initial value)
+    null = function(t, y, params) {
+      r <- r_null_func(t)
+      N <- y[1]
+      dN <- (r - alpha * N) * N
+      list(dN)
+    },
+    
+    # Slow model ODE (constant r at mean value)
+    slow = function(t, y, params) {
+      r <- r_slow_func(t)
+      N <- y[1]
+      dN <- (r - alpha * N) * N
+      list(dN)
+    },
+    
+    # Fast model is just r(t)/alpha (carrying capacity)
+    fast = function(t) {
+      r_func(t) / alpha
+    }
+  )
+}
+
+create_normalized_systems <- function(u_func, P_time, N_prime0) {
+  # Calculate mean u
+  t_range <- c(0, 10)
+  t_eval <- seq(t_range[1], t_range[2], length.out = 1000)
+  u_vals <- u_func(t_eval)
+  u_mean <- mean(u_vals)
+  
+  # Constant functions for null and slow models
+  u_null_func <- function(t) 0
+  u_slow_func <- function(t) u_mean
+  
+  list(
+    dynamic = function(t, y, params) {
+      N_prime <- y[1]
+      u_val <- u_func(t)
+      dNprime <- P_time * (u_val * N_prime - N_prime^2)
+      list(dNprime)
+    },
+    
+    null = function(t, y, params) {
+      N_prime <- y[1]
+      u_val <- u_null_func(t)
+      dNprime <- P_time * (u_val * N_prime - N_prime^2)
+      list(dNprime)
+    },
+    
+    slow = function(t, y, params) {
+      N_prime <- y[1]
+      u_val <- u_slow_func(t)
+      dNprime <- P_time * (u_val * N_prime - N_prime^2)
+      list(dNprime)
+    },
+    
+    fast = function(t) {
+      u_func(t) / P_time
+    }
+  )
+}
