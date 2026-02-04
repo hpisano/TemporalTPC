@@ -153,13 +153,15 @@ acf_irregular <- function(t_time, N_detrend, tau_max = NULL, n_lags = 50) {
 
 # =========================== COMPARISON FUNCTIONS ===========================
 
-#' Calculate absolute deviation between two functions
+#' Calculate absolute deviation between two functions with optional burn-in period
 #' @param t_f Final time for integration
+#' @param t_0 Initial time for integration (default = 0 for no burn-in)
 #' @param N_func Function N(t) (can be numeric vector or function)
 #' @param m_func Function m(t) (can be numeric vector or function)
-#' @return Absolute deviation Dev_m(t_f) = ∫₀^{t_f} |N(t) - m(t)| dt
-#' @details Computes the absolute deviation between two functions over [0, t_f]
-absolute_deviation <- function(N_func, m_func, t_f, tol = 1e-4) {
+#' @param tol Integration tolerance (default = 1e-4)
+#' @return Absolute deviation Dev_m(t_f) = ∫_{t_0}^{t_f} |N(t) - m(t)| dt
+#' @details Computes the absolute deviation between two functions over [t_0, t_f]
+absolute_deviation <- function(N_func, m_func, t_f, t_0 = 0, tol = 1e-4) {
   integrand <- function(t) {
     abs(N_func(t) - m_func(t))
   }
@@ -169,8 +171,10 @@ absolute_deviation <- function(N_func, m_func, t_f, tol = 1e-4) {
     sapply(x, integrand)
   }
   
-  result <- cubature::adaptIntegrate(integrand_vector, lowerLimit = 0, upperLimit = t_f,
-                           tol = tol, fDim = 1)
+  result <- cubature::adaptIntegrate(integrand_vector, 
+                                     lowerLimit = t_0, 
+                                     upperLimit = t_f,
+                                     tol = tol, 
+                                     fDim = 1)
   result$integral
 }
-

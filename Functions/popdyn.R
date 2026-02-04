@@ -120,14 +120,17 @@ create_population_systems <- function(r_func, alpha, N0) {
 }
 
 create_normalized_systems <- function(u_func, P_time, N_prime0) {
-  # Calculate mean u
+  # Calculate mean u for slow model
   t_range <- c(0, 10)
   t_eval <- seq(t_range[1], t_range[2], length.out = 1000)
   u_vals <- u_func(t_eval)
   u_mean <- mean(u_vals)
   
+  # Get initial value of u for null model
+  u_initial <- u_func(0)
+  
   # Constant functions for null and slow models
-  u_null_func <- function(t) 0
+  u_null_func <- function(t) u_initial  # Use initial u value, not 0
   u_slow_func <- function(t) u_mean
   
   list(
@@ -153,7 +156,7 @@ create_normalized_systems <- function(u_func, P_time, N_prime0) {
     },
     
     fast = function(t) {
-      u_func(t) / P_time
+      u_func(t)
     }
   )
 }
