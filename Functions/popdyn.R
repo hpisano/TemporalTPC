@@ -161,6 +161,7 @@ create_normalized_systems <- function(u_func, P_time, N_prime0) {
   )
 }
 
+
 run_range_3dim_simulation <- function(P_offset, P_amp, P_time) {
   # Use the global parameters defined at the beginning
   z_func <- create_z_function(model = z_params$model,
@@ -169,10 +170,10 @@ run_range_3dim_simulation <- function(P_offset, P_amp, P_time) {
   
   u_func <- growth_rate_3dim_u(P_offset = P_offset,
                                P_amp = P_amp,
-                               d_inf = d_inf,  # Uses global d_inf
+                               d_inf = d_inf,
                                z = z_func)
   
-  pop_systems_prime <- create_normalized_systems(u_func, P_time, N_prime0)  # Uses global N_prime0
+  pop_systems_prime <- create_normalized_systems(u_func, P_time, N_prime0)
   
   # Solve ODE for dynamic system
   solution <- ode(y = c(N_prime = N_prime0), 
@@ -180,22 +181,31 @@ run_range_3dim_simulation <- function(P_offset, P_amp, P_time) {
                   func = pop_systems_prime$dynamic, 
                   parms = NULL)
   
-  # Extract post-burn-in values
-  post_burn_idx <- solution[, "time"] > burn_in_time
-  N_prime_post_burn <- solution[post_burn_idx, "N_prime"]
+  # Solve null system
+  solution_null <- ode(y = c(N_prime = N_prime0), 
+                       times = t_prime, 
+                       func = pop_systems_prime$null, 
+                       parms = NULL)
   
-  # Calculate metrics
-  N_prime_dynamic_func <- approxfun(solution[, "time"], solution[, "N_prime"], rule = 2)
-  
-  # Create comparison functions (using your actual functions from create_normalized_systems)
+  # Solve slow system
   solution_slow <- ode(y = c(N_prime = N_prime0), 
                        times = t_prime, 
                        func = pop_systems_prime$slow, 
                        parms = NULL)
+  
+  # Extract post-burn-in values
+  post_burn_idx <- solution[, "time"] > burn_in_time
+  N_prime_post_burn <- solution[post_burn_idx, "N_prime"]
+  
+  # Create functions for each system
+  N_prime_dynamic_func <- approxfun(solution[, "time"], solution[, "N_prime"], rule = 2)
+  N_prime_null_func <- approxfun(solution_null[, "time"], solution_null[, "N_prime"], rule = 2)
   N_prime_slow_func <- approxfun(solution_slow[, "time"], solution_slow[, "N_prime"], rule = 2)
   
-  K_prime_fast_func <- function(t) rep(1, length(t))  # Fast system at carrying capacity
+  # Fast system function is u_func(t) as defined in create_normalized_systems
+  K_prime_fast_func <- pop_systems_prime$fast
   
+  # Calculate deviations
   abs_dev_slow_prime <- absolute_deviation(t_f = max(t_prime),
                                            t_0 = burn_in_time,
                                            N_func = N_prime_dynamic_func,
@@ -206,14 +216,19 @@ run_range_3dim_simulation <- function(P_offset, P_amp, P_time) {
                                            N_func = N_prime_dynamic_func,
                                            m_func = K_prime_fast_func)
   
-  speed <- abs_dev_slow_prime / (abs_dev_fast_prime + abs_dev_slow_prime)
+  # Calculate speed metric
+  if (abs_dev_fast_prime + abs_dev_slow_prime == 0) {
+    speed <- 0
+  } else {
+    speed <- abs_dev_slow_prime / (abs_dev_fast_prime + abs_dev_slow_prime)
+  }
   
   return(data.frame(
     P_offset = P_offset,
     P_amp = P_amp,
     P_time = P_time,
     E_N_prime = mean(N_prime_post_burn, na.rm = TRUE),
-    speed = ifelse(is.nan(speed) | is.infinite(speed), 0, speed),
+    speed = speed,
     stringsAsFactors = FALSE
   ))
 }

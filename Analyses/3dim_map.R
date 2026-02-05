@@ -1,20 +1,20 @@
 # Load required libraries
-
-
 library(deSolve)
 library(ggplot2)
 library(gridExtra)
 library(viridis)
+library(future.apply)
+library(parallel)
 
 # ==================== USER-DEFINED PARAMETERS =====================
 # Set these values at the beginning - they will be used throughout
 
 # Time settings
 t_prime_start <- 0
-t_prime_end <- 20
+t_prime_end <- 50
 t_prime_step <- 0.01
 t_prime <- seq(t_prime_start, t_prime_end, by = t_prime_step)
-burn_in_time <- 10
+burn_in_time <- 25
 
 # z (normalized temperature) parameters
 z_params <- list(
@@ -23,7 +23,7 @@ z_params <- list(
 )
 
 # u (thermal response) parameters
-d_inf <- 0.2         # Set d_inf value here
+d_inf <- 0.1         # Set d_inf value here
 # Note: P_offset, P_amp will be varied in the loop
 
 # Normalized population parameters
@@ -31,41 +31,44 @@ N_prime0 <- 0.5      # Set initial population value here
 # Note: P_time will be varied in the loop
 
 # Parameter ranges for the sweep
-P_amp_vals <- seq(0, 1.5, length.out = 5)      
-P_offset_vals <- seq(-2.5, 0.5  , length.out = 8)  
-P_time_vals <- seq(1, 40, length.out = 5)     
-
-
-
+P_amp_vals <- seq(0, 1.1, length.out = 10)      
+P_offset_vals <- seq(-2.5, 1, length.out = 8)  
+P_time_vals <- seq(1, 120, length.out = 10)     
 
 # ==================== PARAMETER SWEEP =====================
-# Run simulations for all parameter combinations
-results <- list()
+# Run simulations for all parameter combinations in parallel
+
 total_combinations <- length(P_offset_vals) * length(P_amp_vals) * length(P_time_vals)
-cat("Running", total_combinations, "simulations...\n")
+cat("Running", total_combinations, "simulations in parallel...\n")
 cat("Parameters:\n")
 cat("  d_inf =", d_inf, "\n")
 cat("  N_prime0 =", N_prime0, "\n")
 cat("  z model =", z_params$model, "\n")
 cat("  z phase =", z_params$phase, "\n\n")
 
-counter <- 0
-for (i in seq_along(P_offset_vals)) {
-  for (j in seq_along(P_amp_vals)) {
-    for (k in seq_along(P_time_vals)) {
-      counter <- counter + 1
-      if (counter %% 100 == 0) {
-        cat("  Completed", counter, "of", total_combinations, "simulations\n")
-      }
-      
-      result <- run_range_3dim_simulation(P_offset_vals[i], P_amp_vals[j], P_time_vals[k])
-      results[[counter]] <- result
-    }
-  }
-}
+# Set up parallel processing
+plan(multisession, workers = 18)
+
+# Create all parameter combinations
+param_combinations <- expand.grid(
+  P_offset = P_offset_vals,
+  P_amp = P_amp_vals,
+  P_time = P_time_vals,
+  KEEP.OUT.ATTRS = FALSE,
+  stringsAsFactors = FALSE
+)
+
+# Run simulations in parallel
+results_list <- future_lapply(seq_len(nrow(param_combinations)), function(i) {
+  run_range_3dim_simulation(
+    param_combinations$P_offset[i],
+    param_combinations$P_amp[i],
+    param_combinations$P_time[i]
+  )
+}, future.seed = TRUE)
 
 # Combine all results
-results_df <- do.call(rbind, results)
+results_df <- do.call(rbind, results_list)
 
 # ==================== CREATE HEATMAPS =====================
 
@@ -128,3 +131,4 @@ if (requireNamespace("patchwork", quietly = TRUE)) {
   print(E_N_prime_facet)
   print(speed_facet)
 }
+

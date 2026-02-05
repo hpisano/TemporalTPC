@@ -18,15 +18,15 @@ z_params <- list(
 
 # u (thermal response) parameters
 u_params <- list(
-  P_offset = -4,
+  P_offset = -1,
   P_amp = 0.5,
-  d_inf = 0.2
+  d_inf = 0.1
 )
 
 # Normalized population parameters
 N_prime_params <- list(
   N_prime0 = 0.5,
-  P_time = 3
+  P_time = 100
 )
 
 # ==================== COMPUTATIONS =====================
