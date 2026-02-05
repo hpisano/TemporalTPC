@@ -32,8 +32,8 @@ N_prime0 <- 0.5      # Set initial population value here
 
 # Parameter ranges for the sweep
 P_amp_vals <- seq(0, 1.5, length.out = 5)      
-P_offset_vals <- seq(-3, 1  , length.out = 10)  
-P_time_vals <- seq(1, 20, length.out = 5)     
+P_offset_vals <- seq(-2.5, 0.5  , length.out = 8)  
+P_time_vals <- seq(1, 40, length.out = 5)     
 
 
 
