@@ -1,118 +1,130 @@
-# ==================== PARAMETERS =====================
-library(deSolve, cubature)
+# Load required libraries
 
-# Normalized time settings
+
+library(deSolve)
+library(ggplot2)
+library(gridExtra)
+library(viridis)
+
+# ==================== USER-DEFINED PARAMETERS =====================
+# Set these values at the beginning - they will be used throughout
+
+# Time settings
 t_prime_start <- 0
 t_prime_end <- 20
 t_prime_step <- 0.01
 t_prime <- seq(t_prime_start, t_prime_end, by = t_prime_step)
-
-# ADD THIS: Burn-in period (in normalized time units)
-burn_in_time <- 10  # Adjust this value as needed
+burn_in_time <- 10
 
 # z (normalized temperature) parameters
 z_params <- list(
-  model = "sine",
-  phase = 0
+  model = "sine",    # Change if needed
+  phase = 0          # Change if needed
 )
 
 # u (thermal response) parameters
-u_params <- list(
-  P_offset = -4,
-  P_amp = 0.5,
-  d_inf = 0.2
-)
+d_inf <- 0.2         # Set d_inf value here
+# Note: P_offset, P_amp will be varied in the loop
 
 # Normalized population parameters
-N_prime_params <- list(
-  N_prime0 = 0.5,
-  P_time = 3
-)
+N_prime0 <- 0.5      # Set initial population value here
+# Note: P_time will be varied in the loop
 
-# ==================== COMPUTATIONS =====================
+# Parameter ranges for the sweep
+P_amp_vals <- seq(0, 1.5, length.out = 5)      
+P_offset_vals <- seq(-3, 1  , length.out = 10)  
+P_time_vals <- seq(1, 20, length.out = 5)     
 
-# 1. Create continuous z function (normalized temperature)
-z_func <- create_z_function(model = z_params$model,
-                            period = z_params$period,
-                            phase = z_params$phase)
 
-# 2. Create continuous u function (thermal response)
-u_func <- growth_rate_3dim_u(P_offset = u_params$P_offset,
-                             P_amp = u_params$P_amp,
-                             d_inf = u_params$d_inf,
-                             z = z_func)
 
-# 3. Create continuous population systems (normalized)
-pop_systems_prime <- create_normalized_systems(u_func, N_prime_params$P_time, N_prime_params$N_prime0)
 
-# 4. Solve all ODE systems
-library(deSolve)
+# ==================== PARAMETER SWEEP =====================
+# Run simulations for all parameter combinations
+results <- list()
+total_combinations <- length(P_offset_vals) * length(P_amp_vals) * length(P_time_vals)
+cat("Running", total_combinations, "simulations...\n")
+cat("Parameters:\n")
+cat("  d_inf =", d_inf, "\n")
+cat("  N_prime0 =", N_prime0, "\n")
+cat("  z model =", z_params$model, "\n")
+cat("  z phase =", z_params$phase, "\n\n")
 
-# Function to solve ODE and return function wrapper
-solve_ode_system <- function(ode_func, y0, times, parms = list()) {
-  solution <- ode(y = y0, times = times, func = ode_func, parms = parms)
-  approxfun(solution[, 1], solution[, 2], rule = 2)
+counter <- 0
+for (i in seq_along(P_offset_vals)) {
+  for (j in seq_along(P_amp_vals)) {
+    for (k in seq_along(P_time_vals)) {
+      counter <- counter + 1
+      if (counter %% 100 == 0) {
+        cat("  Completed", counter, "of", total_combinations, "simulations\n")
+      }
+      
+      result <- run_range_3dim_simulation(P_offset_vals[i], P_amp_vals[j], P_time_vals[k])
+      results[[counter]] <- result
+    }
+  }
 }
 
-# Solve each model
-N_prime_dynamic_func <- solve_ode_system(pop_systems_prime$dynamic, c(N_prime = N_prime_params$N_prime0), t_prime)
-N_prime_null_func <- solve_ode_system(pop_systems_prime$null, c(N_prime = N_prime_params$N_prime0), t_prime)
-N_prime_slow_func <- solve_ode_system(pop_systems_prime$slow, c(N_prime = N_prime_params$N_prime0), t_prime)
-K_prime_fast_func <- pop_systems_prime$fast  # Already a continuous function!
+# Combine all results
+results_df <- do.call(rbind, results)
 
-# Evaluate functions at time points for plotting
-z_vals <- z_func(t_prime)
-u_vals <- u_func(t_prime)
-N_prime_vals <- N_prime_dynamic_func(t_prime)
-N_prime_null_vals <- N_prime_null_func(t_prime)
-N_prime_slow_vals <- N_prime_slow_func(t_prime)
-K_prime_fast_vals <- K_prime_fast_func(t_prime)
-u_mean <- mean(u_vals)  # For reference line in plot
+# ==================== CREATE HEATMAPS =====================
 
-# ==================== BURN-IN PERIOD HANDLING =====================
+# Create heatmaps for E[N_prime] (10 subplots, one for each P_offset)
+E_N_prime_plots <- list()
+for (i in seq_along(P_offset_vals)) {
+  offset_val <- P_offset_vals[i]
+  subset_data <- results_df[results_df$P_offset == offset_val, ]
+  
+  p <- create_heatmap(
+    data = subset_data,
+    metric = "E_N_prime",
+    title_prefix = "E[N'] after burn-in",
+    color_palette = "plasma"
+  )
+  
+  E_N_prime_plots[[i]] <- p
+}
 
-# Create indices for burn-in period
-burn_in_idx <- t_prime <= burn_in_time
-post_burn_idx <- t_prime > burn_in_time
+# Create heatmaps for speed 
+speed_plots <- list()
+for (i in seq_along(P_offset_vals)) {
+  offset_val <- P_offset_vals[i]
+  subset_data <- results_df[results_df$P_offset == offset_val, ]
+  
+  p <- create_heatmap(
+    data = subset_data,
+    metric = "speed",
+    title_prefix = "Speed metric",
+    color_palette = "magma"
+  )
+  
+  speed_plots[[i]] <- p
+}
 
-# Create post-burn-in time vector and values
-t_prime_post <- t_prime[post_burn_idx]
-z_vals_post <- z_vals[post_burn_idx]
-u_vals_post <- u_vals[post_burn_idx]
-N_prime_vals_post <- N_prime_vals[post_burn_idx]
-N_prime_null_vals_post <- N_prime_null_vals[post_burn_idx]
-N_prime_slow_vals_post <- N_prime_slow_vals[post_burn_idx]
-K_prime_fast_vals_post <- K_prime_fast_vals[post_burn_idx]
+# ==================== DISPLAY RESULTS =====================
 
-# ==================== CONTINUOUS COMPARISON METRICS (WITH BURN-IN) =====================
-
-# Create functions that only exist after burn-in period for metrics
-# (or use the original functions but integrate from burn_in_time)
-abs_dev_null_prime <- absolute_deviation(t_f = max(t_prime),
-                                        t_0 = burn_in_time,  # ADD THIS if your function supports it
-                                        N_func = N_prime_dynamic_func,
-                                        m_func = N_prime_null_func)
-
-abs_dev_slow_prime <- absolute_deviation(t_f = max(t_prime),
-                                        t_0 = burn_in_time,  # ADD THIS
-                                        N_func = N_prime_dynamic_func,
-                                        m_func = N_prime_slow_func)
-
-abs_dev_fast_prime <- absolute_deviation(t_f = max(t_prime),
-                                        t_0 = burn_in_time,  # ADD THIS
-                                        N_func = N_prime_dynamic_func,
-                                        m_func = K_prime_fast_func)
-
-# If your absolute_deviation function doesn't support t_0 parameter, 
-# you may need to modify it or create a wrapper:
-# absolute_deviation_burn <- function(t_0, t_f, N_func, m_func, ...) {
-#   integrand <- function(tau) {
-#     abs(N_func(tau) - m_func(tau))
-#   }
-#   integrate(integrand, lower = t_0, upper = t_f, ...)$value
-# }
-
-speed = abs_dev_slow_prime / (abs_dev_fast_prime + abs_dev_slow_prime)
-
-# ==================== PLOTTING (WITH BURN-IN) =====================
-
+if (requireNamespace("patchwork", quietly = TRUE)) {
+  library(patchwork)
+  
+  E_N_prime_facet <- ggplot(results_df, aes(x = P_amp, y = P_time, fill = E_N_prime)) +
+    geom_tile() +
+    scale_fill_viridis(option = "plasma", limits = c(0, 1)) +
+    facet_wrap(~ round(P_offset, 1), nrow = 2) +
+    labs(title = paste("E[N'] after burn-in\n(d_inf =", d_inf, 
+                       ", N_prime0 =", N_prime0, ")"),
+         x = "P_amp", y = "P_time", fill = "E[N']") +
+    theme_minimal()
+  
+  speed_facet <- ggplot(results_df, aes(x = P_amp, y = P_time, fill = speed)) +
+    geom_tile() +
+    scale_fill_viridis(option = "magma", limits = c(0, 1)) +
+    facet_wrap(~ round(P_offset, 1), nrow = 2) +
+    labs(title = paste("Speed metric\n(d_inf =", d_inf, 
+                       ", N_prime0 =", N_prime0, ")"),
+         x = "P_amp", y = "P_time", fill = "Speed") +
+    theme_minimal()
+  
+  # Display faceted plots
+  print(E_N_prime_facet)
+  print(speed_facet)
+}

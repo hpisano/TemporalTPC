@@ -160,3 +160,94 @@ create_normalized_systems <- function(u_func, P_time, N_prime0) {
     }
   )
 }
+
+run_range_3dim_simulation <- function(P_offset, P_amp, P_time) {
+  # Use the global parameters defined at the beginning
+  z_func <- create_z_function(model = z_params$model,
+                              period = z_params$period,
+                              phase = z_params$phase)
+  
+  u_func <- growth_rate_3dim_u(P_offset = P_offset,
+                               P_amp = P_amp,
+                               d_inf = d_inf,  # Uses global d_inf
+                               z = z_func)
+  
+  pop_systems_prime <- create_normalized_systems(u_func, P_time, N_prime0)  # Uses global N_prime0
+  
+  # Solve ODE for dynamic system
+  solution <- ode(y = c(N_prime = N_prime0), 
+                  times = t_prime, 
+                  func = pop_systems_prime$dynamic, 
+                  parms = NULL)
+  
+  # Extract post-burn-in values
+  post_burn_idx <- solution[, "time"] > burn_in_time
+  N_prime_post_burn <- solution[post_burn_idx, "N_prime"]
+  
+  # Calculate metrics
+  N_prime_dynamic_func <- approxfun(solution[, "time"], solution[, "N_prime"], rule = 2)
+  
+  # Create comparison functions (using your actual functions from create_normalized_systems)
+  solution_slow <- ode(y = c(N_prime = N_prime0), 
+                       times = t_prime, 
+                       func = pop_systems_prime$slow, 
+                       parms = NULL)
+  N_prime_slow_func <- approxfun(solution_slow[, "time"], solution_slow[, "N_prime"], rule = 2)
+  
+  K_prime_fast_func <- function(t) rep(1, length(t))  # Fast system at carrying capacity
+  
+  abs_dev_slow_prime <- absolute_deviation(t_f = max(t_prime),
+                                           t_0 = burn_in_time,
+                                           N_func = N_prime_dynamic_func,
+                                           m_func = N_prime_slow_func)
+  
+  abs_dev_fast_prime <- absolute_deviation(t_f = max(t_prime),
+                                           t_0 = burn_in_time,
+                                           N_func = N_prime_dynamic_func,
+                                           m_func = K_prime_fast_func)
+  
+  speed <- abs_dev_slow_prime / (abs_dev_fast_prime + abs_dev_slow_prime)
+  
+  return(data.frame(
+    P_offset = P_offset,
+    P_amp = P_amp,
+    P_time = P_time,
+    E_N_prime = mean(N_prime_post_burn, na.rm = TRUE),
+    speed = ifelse(is.nan(speed) | is.infinite(speed), 0, speed),
+    stringsAsFactors = FALSE
+  ))
+}
+
+# Function to create heatmap for a specific P_offset value
+create_heatmap <- function(data, metric, title_prefix, color_palette = "viridis") {
+  # Determine appropriate limits based on metric
+  if (metric == "E_N_prime") {
+    fill_limits <- c(0, 1)
+    fill_label <- "E[N']"
+  } else if (metric == "speed") {
+    fill_limits <- c(0, 1)
+    fill_label <- "Speed"
+  } else {
+    fill_limits <- NULL
+    fill_label <- metric
+  }
+  
+  ggplot(data, aes(x = P_amp, y = P_time, fill = !!sym(metric))) +
+    geom_tile() +
+    scale_fill_viridis(option = color_palette, limits = fill_limits) +
+    labs(
+      title = paste(title_prefix, "\nP_offset =", unique(data$P_offset)),
+      x = "P_amp",
+      y = "P_time",
+      fill = fill_label
+    ) +
+    theme_minimal() +
+    theme(
+      plot.title = element_text(hjust = 0.5, size = 10),
+      axis.text = element_text(size = 8),
+      axis.title = element_text(size = 9),
+      legend.position = "right"
+    ) +
+    coord_fixed(ratio = (max(data$P_amp) - min(data$P_amp)) / 
+                  (max(data$P_time) - min(data$P_time)) * 0.8)
+}
