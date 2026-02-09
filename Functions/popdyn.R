@@ -193,6 +193,11 @@ run_range_3dim_simulation <- function(P_offset, P_amp, P_time) {
                        func = pop_systems_prime$slow, 
                        parms = NULL)
   
+  # Apply threshold to prevent extremely small population values
+  solution[, "N_prime"][solution[, "N_prime"] < 0.01] <- 0
+  solution_null[, "N_prime"][solution_null[, "N_prime"] < 0.01] <- 0
+  solution_slow[, "N_prime"][solution_slow[, "N_prime"] < 0.01] <- 0
+  
   # Extract post-burn-in values
   post_burn_idx <- solution[, "time"] > burn_in_time
   N_prime_post_burn <- solution[post_burn_idx, "N_prime"]
