@@ -179,7 +179,7 @@ run_range_3dim_simulation <- function(P_offset, P_amp, P_time) {
   solution <- ode(y = c(N_prime = N_prime0), 
                   times = t_prime, 
                   func = pop_systems_prime$dynamic, 
-                  parms = NULL)
+                  parms = NULL, method = "vode", mf = 22)
   
   # Solve null system
   solution_null <- ode(y = c(N_prime = N_prime0), 
@@ -228,12 +228,15 @@ run_range_3dim_simulation <- function(P_offset, P_amp, P_time) {
     speed <- abs_dev_slow_prime / (abs_dev_fast_prime + abs_dev_slow_prime)
   }
   
+  # Return all metrics including the absolute deviations
   return(data.frame(
     P_offset = P_offset,
     P_amp = P_amp,
     P_time = P_time,
     E_N_prime = mean(N_prime_post_burn, na.rm = TRUE),
     speed = speed,
+    abs_dev_slow = abs_dev_slow_prime,
+    abs_dev_fast = abs_dev_fast_prime,
     stringsAsFactors = FALSE
   ))
 }
@@ -271,3 +274,4 @@ create_heatmap <- function(data, metric, title_prefix, color_palette = "viridis"
     coord_fixed(ratio = (max(data$P_amp) - min(data$P_amp)) / 
                   (max(data$P_time) - min(data$P_time)) * 0.8)
 }
+
