@@ -31,9 +31,9 @@ N_prime0 <- 0.5      # Set initial population value here
 # Note: P_time will be varied in the loop
 
 # Parameter ranges for the sweep
-P_amp_vals <- seq(0, 2, length.out = 5)      
-P_offset_vals <- seq(-4, 1, length.out = 8)  
-P_time_vals <- 10^seq(-2, 2, length.out = 5)     
+P_amp_vals <- seq(0.5, 1, length.out = 10)      
+P_offset_vals <- seq(-2.5, 1, length.out = 8)  
+P_time_vals <- 10^seq(-2, 3, length.out = 10)
 
 # ==================== PARAMETER SWEEP =====================
 # Run simulations for all parameter combinations in parallel
@@ -47,7 +47,7 @@ cat("  z model =", z_params$model, "\n")
 cat("  z phase =", z_params$phase, "\n\n")
 
 # Set up parallel processing
-plan(multisession, workers = 1)
+plan(multisession, workers = 5)
 
 # Create all parameter combinations
 param_combinations <- expand.grid(
@@ -115,8 +115,9 @@ if (requireNamespace("patchwork", quietly = TRUE)) {
     facet_wrap(~ round(P_offset, 1), nrow = 2) +
     labs(title = paste("E[N'] after burn-in\n(d_inf =", d_inf, 
                        ", N_prime0 =", N_prime0, ")"),
-         x = "P_amp", y = "P_time", fill = "E[N']") +
-    theme_minimal()
+         x = "sigma/epsilon", y = "delta_r*p", fill = "E[N']") +
+    theme_minimal() +
+    scale_y_log10()
   
   # Create a new column for conditional coloring
   results_df$speed_display <- ifelse(
@@ -137,8 +138,9 @@ if (requireNamespace("patchwork", quietly = TRUE)) {
     facet_wrap(~ round(P_offset, 1), nrow = 2) +
     labs(title = paste("Speed metric\n(d_inf =", d_inf, 
                        ", N_prime0 =", N_prime0, ")"),
-         x = "P_amp", y = "P_time") +
-    theme_minimal()
+         x = "sigma/epsilon", y = "delta_r*p") +
+    theme_minimal() +
+    scale_y_log10()
   
   # Display faceted plots
   print(E_N_prime_facet)
@@ -173,10 +175,11 @@ abs_dev_slow_plot <- ggplot(results_df, aes(x = P_amp, y = P_time, fill = abs_de
   labs(
     title = paste("Absolute deviation from slow system (log scale)\n(d_inf =", d_inf, 
                   ", N_prime0 =", N_prime0, ")"),
-    x = "P_amp", 
-    y = "P_time"
+    x = "sigma/epsilon", 
+    y = "delta_r*p"
   ) +
-  theme_minimal()
+  theme_minimal() +
+  scale_y_log10()
 
 print(abs_dev_slow_plot)
 
@@ -207,10 +210,11 @@ abs_dev_fast_plot <- ggplot(results_df, aes(x = P_amp, y = P_time, fill = abs_de
   labs(
     title = paste("Absolute deviation from fast system (log10(value + 1) scale)\n(d_inf =", d_inf, 
                   ", N_prime0 =", N_prime0, ")"),
-    x = "P_amp", 
-    y = "P_time"
+    x = "sigma/epsilon", 
+    y = "delta_r*p"
   ) +
-  theme_minimal()
+  theme_minimal() +
+  scale_y_log10()
 
 print(abs_dev_fast_plot)
 
@@ -229,8 +233,8 @@ results_df$dev_comparison <- ifelse(
 match_map_plot <- ggplot(results_df, aes(x = P_amp, y = P_time, fill = dev_comparison)) +
   geom_tile() +
   scale_fill_manual(
-    values = c("slow > fast" = "blue", 
-               "fast ≥ slow" = "red"), 
+    values = c("slow > fast" = "#61f6d3", 
+               "fast ≥ slow" = "#772088"), 
     na.value = "gray70",
     name = "Which is bigger?"
   ) +
@@ -238,9 +242,147 @@ match_map_plot <- ggplot(results_df, aes(x = P_amp, y = P_time, fill = dev_compa
   labs(
     title = paste("Match Map: Which deviation dominates?\n(d_inf =", d_inf, 
                   ", N_prime0 =", N_prime0, ")"),
-    x = "P_amp", 
-    y = "P_time"
+    x = "sigma/epsilon", 
+    y = "delta_r*p"
   ) +
-  theme_minimal()
+  theme_minimal() +
+  scale_y_log10()
 
 print(match_map_plot)
+
+# ==================== CREATE INTEGRAL HEATMAP =====================
+cat("\n=== Heatmap of integral_P_time_u (log10 scale) ===\n")
+
+# Prepare data for plotting - using log10(integral + 1) scale like the other plots
+# Adding 1 to avoid log(0) issues, especially if some integrals might be negative
+results_df$integral_log <- log10(abs(results_df$integral_P_time_u) + 1)
+results_df$integral_log_display <- ifelse(
+  is.na(results_df$E_N_prime) | results_df$E_N_prime == 0,
+  NA,
+  results_df$integral_log
+)
+
+# Calculate reasonable limits for the color scale
+integral_log_min <- min(results_df$integral_log_display, na.rm = TRUE)
+integral_log_max <- max(results_df$integral_log_display, na.rm = TRUE)
+
+integral_plot <- ggplot(results_df, aes(x = P_amp, y = P_time, fill = integral_log_display)) +
+  geom_tile() +
+  scale_fill_viridis(
+    option = "cividis", 
+    na.value = "gray70",
+    name = "log10(|∫₀¹ P_time·u(t) dt| + 1)",
+    limits = c(integral_log_min, integral_log_max)
+  ) +
+  facet_wrap(~ round(P_offset, 1), nrow = 2) +
+  labs(
+    title = paste("Integral of P_time × u(t) from t=0 to t=1 (log10 scale)\n(d_inf =", d_inf, 
+                  ", N_prime0 =", N_prime0, ")"),
+    x = "sigma/epsilon", 
+    y = "delta_r*p",
+    caption = "∫₀¹ P_time·u(t) dt, displayed as log10(|integral| + 1)"
+  ) +
+  theme_minimal() +
+  scale_y_log10()
+
+print(integral_plot)
+
+# ==================== CREATE SCATTER PLOT =====================
+cat("\n=== Scatter plot: log(|integral|) vs speed ===\n")
+
+# Prepare data for scatter plot
+# Remove NA values and create log-transformed integral
+scatter_data <- results_df[!is.na(results_df$E_N_prime) & results_df$E_N_prime != 0, ]
+
+# Calculate log of absolute value of integral (add small constant to avoid log(0))
+scatter_data$log_integral <- log10(scatter_data$integral_P_time_u)
+
+scatter_plot_colored <- ggplot(scatter_data, aes(x = log_integral, y = speed, color = P_offset)) +
+  geom_point(alpha = 0.6, size = 1.5) +
+  scale_color_viridis_c(option = "plasma", name = "P_offset") +
+  labs(
+    title = paste("Relationship between log|integral| and speed (colored by P_offset)\n(d_inf =", d_inf, 
+                  ", N_prime0 =", N_prime0, ")"),
+    x = "log10(|integral_P_time_u|)",
+    y = "Speed metric"
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(hjust = 0.5),
+    panel.grid.major = element_line(color = "grey90"),
+    panel.grid.minor = element_line(color = "grey95")
+  )
+
+print(scatter_plot_colored)
+
+scatter_plot_colored <- ggplot(scatter_data, aes(x = log_integral, y = speed, color = P_time)) +
+  geom_point(alpha = 0.6, size = 1.5) +
+  scale_color_viridis_c(option = "plasma", name = "P_time") +
+  labs(
+    title = paste("Relationship between log|integral| and speed (colored by P_offset)\n(d_inf =", d_inf, 
+                  ", N_prime0 =", N_prime0, ")"),
+    x = "log10(|integral_P_time_u|)",
+    y = "Speed metric"
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(hjust = 0.5),
+    panel.grid.major = element_line(color = "grey90"),
+    panel.grid.minor = element_line(color = "grey95")
+  )
+
+print(scatter_plot_colored)
+
+scatter_plot_colored <- ggplot(scatter_data, aes(x = log_integral, y = speed, color = P_amp)) +
+  geom_point(alpha = 0.6, size = 1.5) +
+  scale_color_viridis_c(option = "plasma", name = "P_amp") +
+  labs(
+    title = paste("Relationship between log|integral| and speed (colored by P_offset)\n(d_inf =", d_inf, 
+                  ", N_prime0 =", N_prime0, ")"),
+    x = "log10(|integral_P_time_u|)",
+    y = "Speed metric"
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(hjust = 0.5),
+    panel.grid.major = element_line(color = "grey90"),
+    panel.grid.minor = element_line(color = "grey95")
+  )
+
+print(scatter_plot_colored)
+
+scatter_plot_colored <- ggplot(scatter_data, aes(x = log_integral, y = abs_dev_fast, color = P_time)) +
+  geom_point(alpha = 0.6, size = 1.5) +
+  scale_color_viridis_c(option = "plasma", name = "P_time") +
+  labs(
+    title = paste("Relationship between log|integral| and speed (colored by P_offset)\n(d_inf =", d_inf, 
+                  ", N_prime0 =", N_prime0, ")"),
+    x = "log10(|integral_P_time_u|)",
+    y = "Speed metric"
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(hjust = 0.5),
+    panel.grid.major = element_line(color = "grey90"),
+    panel.grid.minor = element_line(color = "grey95")
+  )
+
+print(scatter_plot_colored)
+
+scatter_plot_colored <- ggplot(scatter_data, aes(x = log_integral, y = abs_dev_slow, color = P_time)) +
+  geom_point(alpha = 0.6, size = 1.5) +
+  scale_color_viridis_c(option = "plasma", name = "P_time") +
+  labs(
+    title = paste("Relationship between log|integral| and speed (colored by P_offset)\n(d_inf =", d_inf, 
+                  ", N_prime0 =", N_prime0, ")"),
+    x = "log10(|integral_P_time_u|)",
+    y = "Speed metric"
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(hjust = 0.5),
+    panel.grid.major = element_line(color = "grey90"),
+    panel.grid.minor = element_line(color = "grey95")
+  )
+
+print(scatter_plot_colored)

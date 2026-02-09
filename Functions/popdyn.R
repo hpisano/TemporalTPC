@@ -184,6 +184,22 @@ run_range_3dim_simulation <- function(P_offset, P_amp, P_time) {
   
   pop_systems_prime <- create_normalized_systems(u_func, P_time, N_prime0)
   
+  # Calculate the integral between t=0 and t=1 of P_time * u_func(t)
+  # Using numerical integration
+  integrand_func <- function(t) {
+    return(P_time * u_func(t))
+  }
+  
+  # Use integrate function for numerical integration
+  integral_result <- tryCatch({
+    integrate(integrand_func, lower = 0, upper = 1)$value
+  }, error = function(e) {
+    # Fallback to simple numerical integration if integrate fails
+    t_vals <- seq(0, 1, length.out = 1000)
+    integrand_vals <- sapply(t_vals, integrand_func)
+    mean(integrand_vals) * (1 - 0)  # Simple Riemann sum approximation
+  })
+  
   # Solve ODE for dynamic system
   solution <- ode(y = c(N_prime = N_prime0), 
                   times = t_prime, 
@@ -207,8 +223,6 @@ run_range_3dim_simulation <- function(P_offset, P_amp, P_time) {
   solution_null[solution_null < 0.01] <- 0
   solution[solution < 0.01] <- 0
   
-  # Apply threshold to prevent extremely small population values
-
   # Extract post-burn-in values
   post_burn_idx <- solution[, "time"] > burn_in_time
   N_prime_post_burn <- solution[post_burn_idx, "N_prime"]
@@ -239,7 +253,7 @@ run_range_3dim_simulation <- function(P_offset, P_amp, P_time) {
     speed <- abs_dev_slow_prime / (abs_dev_fast_prime + abs_dev_slow_prime)
   }
   
-  # Return all metrics including the absolute deviations
+  # Return all metrics including the integral and absolute deviations
   return(data.frame(
     P_offset = P_offset,
     P_amp = P_amp,
@@ -248,6 +262,7 @@ run_range_3dim_simulation <- function(P_offset, P_amp, P_time) {
     speed = speed,
     abs_dev_slow = abs_dev_slow_prime,
     abs_dev_fast = abs_dev_fast_prime,
+    integral_P_time_u = integral_result,  # New output: integral from t=0 to t=1 of P_time * u_func(t)
     stringsAsFactors = FALSE
   ))
 }
