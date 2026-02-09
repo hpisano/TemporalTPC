@@ -1,7 +1,5 @@
 # ==================== SIMPLE FUNCTIONS =====================
 
-# ==================== SIMPLE FUNCTIONS =====================
-
 #' Simple growth rate function
 #' 
 #' @param T Temperature (either numeric constant or function T(t))

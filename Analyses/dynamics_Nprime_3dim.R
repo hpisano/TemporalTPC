@@ -67,11 +67,6 @@ N_prime_null_vals <- N_prime_null_func(t_prime)
 N_prime_slow_vals <- N_prime_slow_func(t_prime)
 K_prime_fast_vals <- K_prime_fast_func(t_prime)
 
-# Apply threshold to prevent extremely small population values
-N_prime_vals[N_prime_vals < 0.01] <- 0
-N_prime_null_vals[N_prime_null_vals < 0.01] <- 0
-N_prime_slow_vals[N_prime_slow_vals < 0.01] <- 0
-
 # ==================== BURN-IN PERIOD HANDLING =====================
 
 # Create indices for burn-in period
@@ -86,6 +81,11 @@ N_prime_vals_post <- N_prime_vals[post_burn_idx]
 N_prime_null_vals_post <- N_prime_null_vals[post_burn_idx]
 N_prime_slow_vals_post <- N_prime_slow_vals[post_burn_idx]
 K_prime_fast_vals_post <- K_prime_fast_vals[post_burn_idx]
+
+# Apply threshold to prevent extremely small population values
+N_prime_vals[N_prime_vals < 0.01] <- 0
+N_prime_null_vals[N_prime_null_vals < 0.01] <- 0
+N_prime_slow_vals[N_prime_slow_vals < 0.01] <- 0
 
 # ==================== CONTINUOUS COMPARISON METRICS (WITH BURN-IN) =====================
 

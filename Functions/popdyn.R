@@ -119,7 +119,7 @@ create_population_systems <- function(r_func, alpha, N0) {
   )
 }
 
-create_normalized_systems <- function(u_func, P_time, N_prime0) {
+create_normalized_systems <- function(u_func, P_time, N_prime0, threshold = 1e-2) {
   # Calculate mean u for slow model
   t_range <- c(0, 10)
   t_eval <- seq(t_range[1], t_range[2], length.out = 1000)
@@ -133,25 +133,34 @@ create_normalized_systems <- function(u_func, P_time, N_prime0) {
   u_null_func <- function(t) u_initial  # Use initial u value, not 0
   u_slow_func <- function(t) u_mean
   
+  # Helper function to apply dynamic threshold in ODE
+  dNprime_dynamic <- function(N_prime, u_val) {
+    # Apply threshold: if N_prime is below threshold, set derivative to 0
+    if (N_prime < threshold) {
+      return(0)
+    }
+    return(P_time * (u_val * N_prime - N_prime^2))
+  }
+  
   list(
     dynamic = function(t, y, params) {
       N_prime <- y[1]
       u_val <- u_func(t)
-      dNprime <- P_time * (u_val * N_prime - N_prime^2)
+      dNprime <- dNprime_dynamic(N_prime, u_val)
       list(dNprime)
     },
     
     null = function(t, y, params) {
       N_prime <- y[1]
       u_val <- u_null_func(t)
-      dNprime <- P_time * (u_val * N_prime - N_prime^2)
+      dNprime <- dNprime_dynamic(N_prime, u_val)
       list(dNprime)
     },
     
     slow = function(t, y, params) {
       N_prime <- y[1]
       u_val <- u_slow_func(t)
-      dNprime <- P_time * (u_val * N_prime - N_prime^2)
+      dNprime <- dNprime_dynamic(N_prime, u_val)
       list(dNprime)
     },
     
@@ -179,7 +188,7 @@ run_range_3dim_simulation <- function(P_offset, P_amp, P_time) {
   solution <- ode(y = c(N_prime = N_prime0), 
                   times = t_prime, 
                   func = pop_systems_prime$dynamic, 
-                  parms = NULL, method = "vode", mf = 22)
+                  parms = NULL)
   
   # Solve null system
   solution_null <- ode(y = c(N_prime = N_prime0), 
@@ -194,10 +203,12 @@ run_range_3dim_simulation <- function(P_offset, P_amp, P_time) {
                        parms = NULL)
   
   # Apply threshold to prevent extremely small population values
-  solution[, "N_prime"][solution[, "N_prime"] < 0.01] <- 0
-  solution_null[, "N_prime"][solution_null[, "N_prime"] < 0.01] <- 0
-  solution_slow[, "N_prime"][solution_slow[, "N_prime"] < 0.01] <- 0
+  solution_slow[solution_slow < 0.01] <- 0
+  solution_null[solution_null < 0.01] <- 0
+  solution[solution < 0.01] <- 0
   
+  # Apply threshold to prevent extremely small population values
+
   # Extract post-burn-in values
   post_burn_idx <- solution[, "time"] > burn_in_time
   N_prime_post_burn <- solution[post_burn_idx, "N_prime"]

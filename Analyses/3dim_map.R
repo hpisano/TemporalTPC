@@ -31,9 +31,9 @@ N_prime0 <- 0.5      # Set initial population value here
 # Note: P_time will be varied in the loop
 
 # Parameter ranges for the sweep
-P_amp_vals <- seq(0, 1.1, length.out = 10)      
-P_offset_vals <- seq(-2.5, 1, length.out = 8)  
-P_time_vals <- 10^seq(0, 2, length.out = 10)     
+P_amp_vals <- seq(0, 2, length.out = 5)      
+P_offset_vals <- seq(-4, 1, length.out = 8)  
+P_time_vals <- 10^seq(-2, 2, length.out = 5)     
 
 # ==================== PARAMETER SWEEP =====================
 # Run simulations for all parameter combinations in parallel
@@ -47,7 +47,7 @@ cat("  z model =", z_params$model, "\n")
 cat("  z phase =", z_params$phase, "\n\n")
 
 # Set up parallel processing
-plan(multisession, workers = 15)
+plan(multisession, workers = 1)
 
 # Create all parameter combinations
 param_combinations <- expand.grid(
@@ -66,6 +66,8 @@ results_list <- future_lapply(seq_len(nrow(param_combinations)), function(i) {
     param_combinations$P_time[i]
   )
 }, future.seed = TRUE)
+
+
 
 # Combine all results
 results_df <- do.call(rbind, results_list)
@@ -142,6 +144,7 @@ if (requireNamespace("patchwork", quietly = TRUE)) {
   print(E_N_prime_facet)
   print(speed_facet)
 }
+
 
 # ==================== CREATE ABS_DEV_SLOW HEATMAP (LOG SCALE) =====================
 cat("\n=== Heatmap of abs_dev_slow (log scale) ===\n")
