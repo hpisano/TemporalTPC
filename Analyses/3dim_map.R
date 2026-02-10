@@ -22,7 +22,8 @@ z_params <- list(
   phase = 0          # Change if needed
 )
 
-# u (thermal response) parameters
+# u (thermal response) 
+
 d_inf <- 0.1         # Set d_inf value here
 # Note: P_offset, P_amp will be varied in the loop
 
