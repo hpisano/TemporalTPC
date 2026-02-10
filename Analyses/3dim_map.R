@@ -5,6 +5,7 @@ library(gridExtra)
 library(viridis)
 library(future.apply)
 library(parallel)
+library(ggpubr)
 
 # ==================== USER-DEFINED PARAMETERS =====================
 # Set these values at the beginning - they will be used throughout
@@ -34,7 +35,7 @@ N_prime0 <- 0.5      # Set initial population value here
 # Parameter ranges for the sweep
 P_amp_vals <- seq(0.5, 1, length.out = 10)      
 P_offset_vals <- seq(-2.5, 1, length.out = 8)  
-P_time_vals <- 10^seq(-2, 3, length.out = 10)
+P_time_vals <- 10^seq(-2, 4, length.out = 10)
 
 # ==================== PARAMETER SWEEP =====================
 # Run simulations for all parameter combinations in parallel
@@ -48,7 +49,7 @@ cat("  z model =", z_params$model, "\n")
 cat("  z phase =", z_params$phase, "\n\n")
 
 # Set up parallel processing
-plan(multisession, workers = 5)
+plan(multisession, workers = 10)
 
 # Create all parameter combinations
 param_combinations <- expand.grid(
@@ -298,11 +299,34 @@ scatter_data <- results_df[!is.na(results_df$E_N_prime) & results_df$E_N_prime !
 # Calculate log of absolute value of integral (add small constant to avoid log(0))
 scatter_data$log_integral <- log10(scatter_data$integral_P_time_u)
 
+# Fit the logistic model separately for the equation
+logistic_fit <- glm(speed ~ log_integral, 
+                    data = scatter_data, 
+                    family = binomial(link = "logit"))
+
+# Extract coefficients for the equation
+coefs <- coef(logistic_fit)
+b0 <- round(coefs[1], 4)
+b1 <- round(coefs[2], 4)
+
+# Create the logistic curve equation (NOT classification, just curve fitting)
+# The curve fitted is: y = 1 / (1 + exp(-(b0 + b1*x)))
+logistic_eq <- if (b1 >= 0) {
+  paste0("y = 1 / (1 + exp(-(", b0, " + ", b1, "x)))")
+} else {
+  paste0("y = 1 / (1 + exp(-(", b0, " - ", abs(b1), "x)))")
+}
+
+cat("\nFitted logistic curve equation:\n")
+cat(logistic_eq, "\n")
+cat("Parameters: b0 =", b0, ", b1 =", b1, "\n")
+
+# Create plot with logistic curve fit
 scatter_plot_colored <- ggplot(scatter_data, aes(x = log_integral, y = speed, color = P_offset)) +
   geom_point(alpha = 0.6, size = 1.5) +
   scale_color_viridis_c(option = "plasma", name = "P_offset") +
   labs(
-    title = paste("Relationship between log|integral| and speed (colored by P_offset)\n(d_inf =", d_inf, 
+    title = paste("S-shaped curve fit: log|integral| vs speed (colored by P_offset)\n(d_inf =", d_inf, 
                   ", N_prime0 =", N_prime0, ")"),
     x = "log10(|integral_P_time_u|)",
     y = "Speed metric"
@@ -312,11 +336,32 @@ scatter_plot_colored <- ggplot(scatter_data, aes(x = log_integral, y = speed, co
     plot.title = element_text(hjust = 0.5),
     panel.grid.major = element_line(color = "grey90"),
     panel.grid.minor = element_line(color = "grey95")
-  )
+  ) + 
+  geom_smooth(method = "glm", 
+              method.args = list(family = binomial(link = "logit")),
+              se = FALSE, color = "red", linetype = "solid", size = 1.2) +
+  # Add the correct logistic equation annotation
+  annotate("text", 
+           x = min(scatter_data$log_integral, na.rm = TRUE), 
+           y = 0.95,
+           label = paste("Fitted logistic curve:\n", logistic_eq),
+           hjust = 0, vjust = 1, 
+           size = 3.5, 
+           color = "darkred",
+           family = "mono",
+           parse = FALSE) +
+  annotate("text",
+           x = min(scatter_data$log_integral, na.rm = TRUE),
+           y = 0.85,
+           label = paste("b0 =", b0, ", b1 =", b1),
+           hjust = 0, vjust = 1,
+           size = 3,
+           color = "darkblue",
+           family = "mono")
 
 print(scatter_plot_colored)
 
-scatter_plot_colored <- ggplot(scatter_data, aes(x = log_integral, y = speed, color = P_time)) +
+scatter_plot_colored <- ggplot(scatter_data, aes(x = log_integral, y = abs_dev_fast, color = P_offset)) +
   geom_point(alpha = 0.6, size = 1.5) +
   scale_color_viridis_c(option = "plasma", name = "P_time") +
   labs(
@@ -334,43 +379,7 @@ scatter_plot_colored <- ggplot(scatter_data, aes(x = log_integral, y = speed, co
 
 print(scatter_plot_colored)
 
-scatter_plot_colored <- ggplot(scatter_data, aes(x = log_integral, y = speed, color = P_amp)) +
-  geom_point(alpha = 0.6, size = 1.5) +
-  scale_color_viridis_c(option = "plasma", name = "P_amp") +
-  labs(
-    title = paste("Relationship between log|integral| and speed (colored by P_offset)\n(d_inf =", d_inf, 
-                  ", N_prime0 =", N_prime0, ")"),
-    x = "log10(|integral_P_time_u|)",
-    y = "Speed metric"
-  ) +
-  theme_minimal() +
-  theme(
-    plot.title = element_text(hjust = 0.5),
-    panel.grid.major = element_line(color = "grey90"),
-    panel.grid.minor = element_line(color = "grey95")
-  )
-
-print(scatter_plot_colored)
-
-scatter_plot_colored <- ggplot(scatter_data, aes(x = log_integral, y = abs_dev_fast, color = P_time)) +
-  geom_point(alpha = 0.6, size = 1.5) +
-  scale_color_viridis_c(option = "plasma", name = "P_time") +
-  labs(
-    title = paste("Relationship between log|integral| and speed (colored by P_offset)\n(d_inf =", d_inf, 
-                  ", N_prime0 =", N_prime0, ")"),
-    x = "log10(|integral_P_time_u|)",
-    y = "Speed metric"
-  ) +
-  theme_minimal() +
-  theme(
-    plot.title = element_text(hjust = 0.5),
-    panel.grid.major = element_line(color = "grey90"),
-    panel.grid.minor = element_line(color = "grey95")
-  )
-
-print(scatter_plot_colored)
-
-scatter_plot_colored <- ggplot(scatter_data, aes(x = log_integral, y = abs_dev_slow, color = P_time)) +
+scatter_plot_colored <- ggplot(scatter_data, aes(x = log_integral, y = abs_dev_slow, color = P_amp)) +
   geom_point(alpha = 0.6, size = 1.5) +
   scale_color_viridis_c(option = "plasma", name = "P_time") +
   labs(
