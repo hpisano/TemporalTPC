@@ -168,7 +168,7 @@ abs_dev_slow_max <- max(results_df$abs_dev_slow_log_display, na.rm = TRUE)
 abs_dev_slow_plot <- ggplot(results_df, aes(x = P_amp, y = P_time, fill = abs_dev_slow_log_display)) +
   geom_tile() +
   scale_fill_viridis(
-    option = "viridis", 
+    option = "inferno", 
     na.value = "gray70",
     name = "log10(abs_dev_slow + 1)",
     limits = c(abs_dev_slow_min, abs_dev_slow_max)  # Use calculated limits
@@ -203,7 +203,7 @@ abs_dev_fast_max <- max(results_df$abs_dev_fast_log_display, na.rm = TRUE)
 abs_dev_fast_plot <- ggplot(results_df, aes(x = P_amp, y = P_time, fill = abs_dev_fast_log_display)) +
   geom_tile() +
   scale_fill_viridis(
-    option = "viridis", 
+    option = "mako", 
     na.value = "gray70",
     name = "log10(abs_dev_fast + 1)",
     limits = c(abs_dev_fast_min, abs_dev_fast_max)  # Use calculated limits
