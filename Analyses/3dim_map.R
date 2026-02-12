@@ -33,9 +33,9 @@ N_prime0 <- 0.5      # Set initial population value here
 # Note: P_time will be varied in the loop
 
 # Parameter ranges for the sweep
-P_amp_vals <- seq(0.1, 1.2, length.out = 10)      
-P_offset_vals <- seq(-2.5, 1, length.out = 8)  
-P_time_vals <- 10^seq(-2, 4, length.out = 10)
+P_amp_vals <- seq(0.1, 1.2, length.out = 5)      
+P_offset_vals <- seq(-2.5, 1, length.out = 5)  
+P_time_vals <- 10^seq(-2, 4, length.out = 100)
 
 # ==================== PARAMETER SWEEP =====================
 # Run simulations for all parameter combinations in parallel
@@ -289,11 +289,12 @@ integral_plot <- ggplot(results_df, aes(x = P_amp, y = P_time, fill = integral_l
 
 print(integral_plot)
 
+
 # ==================== CREATE SCATTER PLOT =====================
 cat("\n=== Scatter plot: log(|integral|) vs speed ===\n")
 
 # Prepare data for scatter plot
-# Remove NA values and create log-transformed integral
+# Remove NA values AND points where E_N_prime = 0
 scatter_data <- results_df[!is.na(results_df$E_N_prime) & results_df$E_N_prime != 0, ]
 
 # Calculate log of absolute value of integral (add small constant to avoid log(0))
@@ -309,6 +310,9 @@ coefs <- coef(logistic_fit)
 b0 <- round(coefs[1], 4)
 b1 <- round(coefs[2], 4)
 
+# Calculate AIC for model comparison
+aic_integral <- AIC(logistic_fit)
+
 # Create the logistic curve equation (NOT classification, just curve fitting)
 # The curve fitted is: y = 1 / (1 + exp(-(b0 + b1*x)))
 logistic_eq <- if (b1 >= 0) {
@@ -317,16 +321,12 @@ logistic_eq <- if (b1 >= 0) {
   paste0("y = 1 / (1 + exp(-(", b0, " - ", abs(b1), "x)))")
 }
 
-cat("\nFitted logistic curve equation:\n")
-cat(logistic_eq, "\n")
-cat("Parameters: b0 =", b0, ", b1 =", b1, "\n")
 
 # Create plot with logistic curve fit
-scatter_plot_colored <- ggplot(scatter_data, aes(x = log_integral, y = speed)) +
+scatter_plot_colored <- ggplot(scatter_data, aes(x = log_integral, y = speed, color = P_offset)) +
   geom_point(alpha = 0.6, size = 1.5) +
+  scale_color_viridis_c(option = "magma", name = "P_offset") +
   labs(
-    title = paste("S-shaped curve fit: log|integral| vs speed (colored by P_offset)\n(d_inf =", d_inf, 
-                  ", N_prime0 =", N_prime0, ")"),
     x = "log10(I(1))",
     y = "Speed metric"
   ) +
@@ -338,33 +338,80 @@ scatter_plot_colored <- ggplot(scatter_data, aes(x = log_integral, y = speed)) +
   ) + 
   geom_smooth(method = "glm", 
               method.args = list(family = binomial(link = "logit")),
-              se = FALSE, color = "red", linetype = "solid", size = 1.2) +
-  # Add the correct logistic equation annotation
-  annotate("text", 
-           x = min(scatter_data$log_integral, na.rm = TRUE), 
-           y = 0.95,
-           label = paste("Fitted logistic curve:\n", logistic_eq),
-           hjust = 0, vjust = 1, 
-           size = 3.5, 
-           color = "darkred",
-           family = "mono",
-           parse = FALSE) +
+              se = FALSE, color = "#493dee", linetype = "solid", size = 1.2) +
+  # Add AIC annotation
   annotate("text",
            x = min(scatter_data$log_integral, na.rm = TRUE),
            y = 0.85,
-           label = paste("b0 =", b0, ", b1 =", b1),
+           label = paste("b0 =", b0, ", b1 =", b1, "\nAIC =", round(aic_integral, 1)),
            hjust = 0, vjust = 1,
-           size = 3,
-           color = "darkblue",
+           size = 5,
+           color = "#493dee",
            family = "mono")
 
 print(scatter_plot_colored)
 
-scatter_plot_colored <- ggplot(scatter_data, aes(x = log_integral, y = abs_dev_fast, color = P_offset)) +
+# ==================== P_time SCATTER PLOT =====================
+
+# Prepare data for scatter plot
+# Remove NA values AND points where E_N_prime = 0, and filter out invalid P_time values
+scatter_data_ptime <- results_df[!is.na(results_df$E_N_prime) & results_df$E_N_prime != 0 & 
+                                  !is.na(results_df$P_time) & results_df$P_time > 0, ]
+
+# Calculate log of P_time
+scatter_data_ptime$log_P_time <- log10(scatter_data_ptime$P_time)
+
+# Fit the logistic model for P_time
+logistic_fit_ptime <- glm(speed ~ log_P_time, 
+                          data = scatter_data_ptime, 
+                          family = binomial(link = "logit"))
+
+# Extract coefficients for P_time
+coefs_ptime <- coef(logistic_fit_ptime)
+b0_ptime <- round(coefs_ptime[1], 4)
+b1_ptime <- round(coefs_ptime[2], 4)
+
+# Calculate AIC for P_time model
+aic_ptime <- AIC(logistic_fit_ptime)
+
+# Plot 1: log(P_time) vs speed with logistic fit
+scatter_plot_speed <- ggplot(scatter_data_ptime, aes(x = log_P_time, y = speed, color = P_offset)) +
   geom_point(alpha = 0.6, size = 1.5) +
-  scale_color_viridis_c(option = "plasma", name = "P_offset") +
+  scale_color_viridis_c(option = "magma", name = "P_offset") +
   labs(
-    title = paste("Relationship between log|integral| and speed \n(d_inf =", d_inf, 
+    x = "log10(Delta_r*p)",
+    y = "Speed metric"
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(hjust = 0.5),
+    panel.grid.major = element_line(color = "grey90"),
+    panel.grid.minor = element_line(color = "grey95")
+  ) +
+  geom_smooth(method = "glm", 
+              method.args = list(family = binomial(link = "logit")),
+              se = FALSE, color = "#47b09a", linetype = "solid", size = 1.2) +
+  # Add AIC annotation
+  annotate("text",
+           x = min(scatter_data_ptime$log_P_time, na.rm = TRUE),
+           y = 0.85,
+           label = paste("b0 =", b0_ptime, ", b1 =", b1_ptime, "\nAIC =", round(aic_ptime, 1)),
+           hjust = 0, vjust = 1,
+           size = 5,
+           color = "#47b09a",
+           family = "mono")
+
+print(scatter_plot_speed)
+
+
+# ==================== Additional SCATTER PLOTS =====================
+# SECOND SCATTER PLOT: abs_dev_fast
+# Use the same scatter_data (already filtered for E_N_prime != 0)
+scatter_plot_abs_dev_fast <- ggplot(scatter_data, aes(x = log_integral, y = abs_dev_fast, color = P_offset)) +
+  geom_point(alpha = 0.6, size = 1.5) +
+  scale_color_viridis_c(option = "magma", name = "P_offset") +
+  labs(
+    title = paste("Relationship between log|integral| and abs_dev_fast \n(d_inf =", d_inf, 
                   ", N_prime0 =", N_prime0, ")"),
     x = "log10(I(1))",
     y = "Absolute deviation to the fast model"
@@ -376,13 +423,15 @@ scatter_plot_colored <- ggplot(scatter_data, aes(x = log_integral, y = abs_dev_f
     panel.grid.minor = element_line(color = "grey95")
   )
 
-print(scatter_plot_colored)
+print(scatter_plot_abs_dev_fast)
 
-scatter_plot_colored <- ggplot(scatter_data, aes(x = log_integral, y = abs_dev_slow, color = P_offset)) +
+# THIRD SCATTER PLOT: abs_dev_slow
+# Use the same scatter_data (already filtered for E_N_prime != 0)
+scatter_plot_abs_dev_slow <- ggplot(scatter_data, aes(x = log_integral, y = abs_dev_slow, color = P_offset)) +
   geom_point(alpha = 0.6, size = 1.5) +
   scale_color_viridis_c(option = "plasma", name = "P_offset") +
   labs(
-    title = paste("Relationship between log|integral| and speed\n(d_inf =", d_inf, 
+    title = paste("Relationship between log|integral| and abs_dev_slow\n(d_inf =", d_inf, 
                   ", N_prime0 =", N_prime0, ")"),
     x = "log10(I(1))",
     y = "Absolute deviation to the slow model"
@@ -394,29 +443,4 @@ scatter_plot_colored <- ggplot(scatter_data, aes(x = log_integral, y = abs_dev_s
     panel.grid.minor = element_line(color = "grey95")
   )
 
-print(scatter_plot_colored)
-# ==================== P_time SCATTER PLOT =====================
-cat("\n=== Scatter plots: log(P_time) vs speed metrics ===\n")
-
-# Prepare data for scatter plot
-# Remove NA values and filter out invalid P_time values
-scatter_data <- results_df[!is.na(results_df$E_N_prime) & !is.na(results_df$P_time) & results_df$P_time > 0, ]
-
-# Calculate log of P_time
-scatter_data$log_P_time <- log10(scatter_data$P_time)
-
-# Plot 1: log(P_time) vs speed
-scatter_plot_speed <- ggplot(scatter_data, aes(x = log_P_time, y = speed)) +
-  geom_point(alpha = 0.6, size = 1.5) +
-  labs(
-    x = "log10(Delta_r*p)",
-    y = "Speed metric"
-  ) +
-  theme_minimal() +
-  theme(
-    plot.title = element_text(hjust = 0.5),
-    panel.grid.major = element_line(color = "grey90"),
-    panel.grid.minor = element_line(color = "grey95")
-  )
-
-print(scatter_plot_speed)
+print(scatter_plot_abs_dev_slow)
