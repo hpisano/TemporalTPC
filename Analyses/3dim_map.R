@@ -168,7 +168,7 @@ abs_dev_slow_max <- max(results_df$abs_dev_slow_log_display, na.rm = TRUE)
 abs_dev_slow_plot <- ggplot(results_df, aes(x = P_amp, y = P_time, fill = abs_dev_slow_log_display)) +
   geom_tile() +
   scale_fill_viridis(
-    option = "inferno", 
+    option = "mako", 
     na.value = "gray70",
     name = "log10(abs_dev_slow + 1)",
     limits = c(abs_dev_slow_min, abs_dev_slow_max)  # Use calculated limits
@@ -203,7 +203,7 @@ abs_dev_fast_max <- max(results_df$abs_dev_fast_log_display, na.rm = TRUE)
 abs_dev_fast_plot <- ggplot(results_df, aes(x = P_amp, y = P_time, fill = abs_dev_fast_log_display)) +
   geom_tile() +
   scale_fill_viridis(
-    option = "mako", 
+    option = "viridis", 
     na.value = "gray70",
     name = "log10(abs_dev_fast + 1)",
     limits = c(abs_dev_fast_min, abs_dev_fast_max)  # Use calculated limits
@@ -395,3 +395,28 @@ scatter_plot_colored <- ggplot(scatter_data, aes(x = log_integral, y = abs_dev_s
   )
 
 print(scatter_plot_colored)
+# ==================== P_time SCATTER PLOT =====================
+cat("\n=== Scatter plots: log(P_time) vs speed metrics ===\n")
+
+# Prepare data for scatter plot
+# Remove NA values and filter out invalid P_time values
+scatter_data <- results_df[!is.na(results_df$E_N_prime) & !is.na(results_df$P_time) & results_df$P_time > 0, ]
+
+# Calculate log of P_time
+scatter_data$log_P_time <- log10(scatter_data$P_time)
+
+# Plot 1: log(P_time) vs speed
+scatter_plot_speed <- ggplot(scatter_data, aes(x = log_P_time, y = speed)) +
+  geom_point(alpha = 0.6, size = 1.5) +
+  labs(
+    x = "log10(Delta_r*p)",
+    y = "Speed metric"
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(hjust = 0.5),
+    panel.grid.major = element_line(color = "grey90"),
+    panel.grid.minor = element_line(color = "grey95")
+  )
+
+print(scatter_plot_speed)
