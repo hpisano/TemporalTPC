@@ -33,7 +33,7 @@ N_prime0 <- 0.5      # Set initial population value here
 # Note: P_time will be varied in the loop
 
 # Parameter ranges for the sweep
-P_amp_vals <- seq(0.5, 1, length.out = 10)      
+P_amp_vals <- seq(0.1, 1.2, length.out = 10)      
 P_offset_vals <- seq(-2.5, 1, length.out = 8)  
 P_time_vals <- 10^seq(-2, 4, length.out = 10)
 
@@ -49,7 +49,7 @@ cat("  z model =", z_params$model, "\n")
 cat("  z phase =", z_params$phase, "\n\n")
 
 # Set up parallel processing
-plan(multisession, workers = 10)
+plan(multisession, workers = 15)
 
 # Create all parameter combinations
 param_combinations <- expand.grid(
@@ -322,13 +322,12 @@ cat(logistic_eq, "\n")
 cat("Parameters: b0 =", b0, ", b1 =", b1, "\n")
 
 # Create plot with logistic curve fit
-scatter_plot_colored <- ggplot(scatter_data, aes(x = log_integral, y = speed, color = P_offset)) +
+scatter_plot_colored <- ggplot(scatter_data, aes(x = log_integral, y = speed)) +
   geom_point(alpha = 0.6, size = 1.5) +
-  scale_color_viridis_c(option = "plasma", name = "P_offset") +
   labs(
     title = paste("S-shaped curve fit: log|integral| vs speed (colored by P_offset)\n(d_inf =", d_inf, 
                   ", N_prime0 =", N_prime0, ")"),
-    x = "log10(|integral_P_time_u|)",
+    x = "log10(I(1))",
     y = "Speed metric"
   ) +
   theme_minimal() +
@@ -363,12 +362,12 @@ print(scatter_plot_colored)
 
 scatter_plot_colored <- ggplot(scatter_data, aes(x = log_integral, y = abs_dev_fast, color = P_offset)) +
   geom_point(alpha = 0.6, size = 1.5) +
-  scale_color_viridis_c(option = "plasma", name = "P_time") +
+  scale_color_viridis_c(option = "plasma", name = "P_offset") +
   labs(
-    title = paste("Relationship between log|integral| and speed (colored by P_offset)\n(d_inf =", d_inf, 
+    title = paste("Relationship between log|integral| and speed \n(d_inf =", d_inf, 
                   ", N_prime0 =", N_prime0, ")"),
-    x = "log10(|integral_P_time_u|)",
-    y = "Speed metric"
+    x = "log10(I(1))",
+    y = "Absolute deviation to the fast model"
   ) +
   theme_minimal() +
   theme(
@@ -379,14 +378,14 @@ scatter_plot_colored <- ggplot(scatter_data, aes(x = log_integral, y = abs_dev_f
 
 print(scatter_plot_colored)
 
-scatter_plot_colored <- ggplot(scatter_data, aes(x = log_integral, y = abs_dev_slow, color = P_amp)) +
+scatter_plot_colored <- ggplot(scatter_data, aes(x = log_integral, y = abs_dev_slow, color = P_offset)) +
   geom_point(alpha = 0.6, size = 1.5) +
-  scale_color_viridis_c(option = "plasma", name = "P_time") +
+  scale_color_viridis_c(option = "plasma", name = "P_offset") +
   labs(
-    title = paste("Relationship between log|integral| and speed (colored by P_offset)\n(d_inf =", d_inf, 
+    title = paste("Relationship between log|integral| and speed\n(d_inf =", d_inf, 
                   ", N_prime0 =", N_prime0, ")"),
-    x = "log10(|integral_P_time_u|)",
-    y = "Speed metric"
+    x = "log10(I(1))",
+    y = "Absolute deviation to the slow model"
   ) +
   theme_minimal() +
   theme(

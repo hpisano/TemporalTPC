@@ -185,88 +185,212 @@ run_range_3dim_simulation <- function(P_offset, P_amp, P_time) {
   pop_systems_prime <- create_normalized_systems(u_func, P_time, N_prime0)
   
   # Calculate the integral between t=0 and t=1 of P_time * u_func(t)
-  # Using numerical integration
-  integrand_func <- function(t) {
-    return(P_time * u_func(t))
-  }
-  
-  # Use integrate function for numerical integration
   integral_result <- tryCatch({
-    integrate(integrand_func, lower = 0, upper = 1)$value
+    integrand_func <- function(t) {
+      return(P_time * u_func(t))
+    }
+    
+    result <- integrate(integrand_func, lower = 0, upper = 1)$value
+    
+    if (!is.finite(result)) {
+      t_vals <- seq(0, 1, length.out = 1000)
+      integrand_vals <- sapply(t_vals, integrand_func)
+      result <- mean(integrand_vals) * (1 - 0)
+    }
+    
+    result
   }, error = function(e) {
-    # Fallback to simple numerical integration if integrate fails
-    t_vals <- seq(0, 1, length.out = 1000)
-    integrand_vals <- sapply(t_vals, integrand_func)
-    mean(integrand_vals) * (1 - 0)  # Simple Riemann sum approximation
+    NA_real_
   })
   
-  # Solve ODE for dynamic system
-  solution <- ode(y = c(N_prime = N_prime0), 
-                  times = t_prime, 
-                  func = pop_systems_prime$dynamic, 
-                  parms = NULL)
-  
-  # Solve null system
-  solution_null <- ode(y = c(N_prime = N_prime0), 
-                       times = t_prime, 
-                       func = pop_systems_prime$null, 
-                       parms = NULL)
-  
-  # Solve slow system
-  solution_slow <- ode(y = c(N_prime = N_prime0), 
-                       times = t_prime, 
-                       func = pop_systems_prime$slow, 
-                       parms = NULL)
-  
-  # Apply threshold to prevent extremely small population values
-  solution_slow[solution_slow < 0.01] <- 0
-  solution_null[solution_null < 0.01] <- 0
-  solution[solution < 0.01] <- 0
-  
-  # Extract post-burn-in values
-  post_burn_idx <- solution[, "time"] > burn_in_time
-  N_prime_post_burn <- solution[post_burn_idx, "N_prime"]
-  
-  # Create functions for each system
-  N_prime_dynamic_func <- approxfun(solution[, "time"], solution[, "N_prime"], rule = 2)
-  N_prime_null_func <- approxfun(solution_null[, "time"], solution_null[, "N_prime"], rule = 2)
-  N_prime_slow_func <- approxfun(solution_slow[, "time"], solution_slow[, "N_prime"], rule = 2)
-  
-  # Fast system function is u_func(t) as defined in create_normalized_systems
-  K_prime_fast_func <- pop_systems_prime$fast
-  
-  # Calculate deviations
-  abs_dev_slow_prime <- absolute_deviation(t_f = max(t_prime),
-                                           t_0 = burn_in_time,
-                                           N_func = N_prime_dynamic_func,
-                                           m_func = N_prime_slow_func)
-  
-  abs_dev_fast_prime <- absolute_deviation(t_f = max(t_prime),
-                                           t_0 = burn_in_time,
-                                           N_func = N_prime_dynamic_func,
-                                           m_func = K_prime_fast_func)
-  
-  # Calculate speed metric
-  if (abs_dev_fast_prime + abs_dev_slow_prime == 0) {
-    speed <- 0
-  } else {
-    speed <- abs_dev_slow_prime / (abs_dev_fast_prime + abs_dev_slow_prime)
+  # Helper function to solve ODE with multiple fallback methods
+  solve_ode_robust <- function(system_func, y0, times, max_attempts = 4) {
+    methods_to_try <- c("lsoda", "bdf", "radau", "rk4")
+    
+    for (method in methods_to_try[1:max_attempts]) {
+      solution <- tryCatch({
+        # Suppress the DLSODA warnings
+        suppressWarnings({
+          if (method %in% c("bdf", "radau")) {
+            # These methods are better for stiff systems
+            ode(y = y0, 
+                times = times, 
+                func = system_func, 
+                parms = NULL,
+                method = method,
+                atol = 1e-6, rtol = 1e-6,
+                maxsteps = 50000)
+          } else if (method == "rk4") {
+            # Fixed step method as last resort
+            ode(y = y0, 
+                times = times, 
+                func = system_func, 
+                parms = NULL,
+                method = "rk4")
+          } else {
+            ode(y = y0, 
+                times = times, 
+                func = system_func, 
+                parms = NULL,
+                method = method,
+                atol = 1e-6, rtol = 1e-6,
+                maxsteps = 50000)
+          }
+        })
+      }, error = function(e) NULL, warning = function(w) NULL)
+      
+      # Check if solution is valid
+      if (!is.null(solution) && 
+          nrow(solution) == length(times) && 
+          all(is.finite(solution[, "N_prime"]))) {
+        return(solution)
+      }
+    }
+    
+    # If all methods fail, return NULL
+    return(NULL)
   }
   
-  # Return all metrics including the integral and absolute deviations
-  return(data.frame(
-    P_offset = P_offset,
-    P_amp = P_amp,
-    P_time = P_time,
-    E_N_prime = mean(N_prime_post_burn, na.rm = TRUE),
-    speed = speed,
-    abs_dev_slow = abs_dev_slow_prime,
-    abs_dev_fast = abs_dev_fast_prime,
-    integral_P_time_u = integral_result,  # New output: integral from t=0 to t=1 of P_time * u_func(t)
-    stringsAsFactors = FALSE
-  ))
+  # Try to solve ODEs with error handling
+  tryCatch({
+    # Solve ODE for dynamic system
+    solution <- solve_ode_robust(pop_systems_prime$dynamic, 
+                                  c(N_prime = N_prime0), 
+                                  t_prime)
+    
+    # Solve null system
+    solution_null <- solve_ode_robust(pop_systems_prime$null, 
+                                       c(N_prime = N_prime0), 
+                                       t_prime)
+    
+    # Solve slow system
+    solution_slow <- solve_ode_robust(pop_systems_prime$slow, 
+                                       c(N_prime = N_prime0), 
+                                       t_prime)
+    
+    # Check if any ODE solutions failed - return NA instead of stopping
+    if (is.null(solution) || is.null(solution_null) || is.null(solution_slow)) {
+      return(data.frame(
+        P_offset = P_offset,
+        P_amp = P_amp,
+        P_time = P_time,
+        E_N_prime = NA_real_,
+        speed = NA_real_,
+        abs_dev_slow = NA_real_,
+        abs_dev_fast = NA_real_,
+        integral_P_time_u = integral_result
+      ))
+    }
+    
+    # Apply threshold to prevent extremely small population values
+    threshold_clean <- function(mat, thresh = 0.01) {
+      if (is.null(mat) || nrow(mat) == 0) return(mat)
+      
+      nprime_col <- which(colnames(mat) == "N_prime")
+      if (length(nprime_col) == 0) nprime_col <- 2
+      
+      finite_mask <- is.finite(mat[, nprime_col])
+      below_thresh <- mat[, nprime_col] < thresh & finite_mask
+      mat[below_thresh, nprime_col] <- 0
+      
+      return(mat)
+    }
+    
+    solution <- threshold_clean(solution)
+    solution_null <- threshold_clean(solution_null)
+    solution_slow <- threshold_clean(solution_slow)
+    
+    # Extract post-burn-in values
+    post_burn_idx <- solution[, "time"] > burn_in_time
+    N_prime_post_burn <- solution[post_burn_idx, "N_prime"]
+    
+    # Check if we have valid post-burn-in data - return NA instead of stopping
+    if (length(N_prime_post_burn) == 0 || all(!is.finite(N_prime_post_burn))) {
+      return(data.frame(
+        P_offset = P_offset,
+        P_amp = P_amp,
+        P_time = P_time,
+        E_N_prime = NA_real_,
+        speed = NA_real_,
+        abs_dev_slow = NA_real_,
+        abs_dev_fast = NA_real_,
+        integral_P_time_u = integral_result
+      ))
+    }
+    
+    # Calculate expected N_prime after burn-in (ignore NAs)
+    E_N_prime <- mean(N_prime_post_burn[is.finite(N_prime_post_burn)], na.rm = TRUE)
+    
+    if (!is.finite(E_N_prime)) {
+      E_N_prime <- NA_real_
+    }
+    
+    # Create functions for each system
+    N_prime_dynamic_func <- approxfun(solution[, "time"], solution[, "N_prime"], rule = 2)
+    N_prime_null_func <- approxfun(solution_null[, "time"], solution_null[, "N_prime"], rule = 2)
+    N_prime_slow_func <- approxfun(solution_slow[, "time"], solution_slow[, "N_prime"], rule = 2)
+    
+    K_prime_fast_func <- pop_systems_prime$fast
+    
+    # Calculate deviations with error handling
+    abs_dev_slow_prime <- tryCatch({
+      absolute_deviation(t_f = max(t_prime),
+                         t_0 = burn_in_time,
+                         N_func = N_prime_dynamic_func,
+                         m_func = N_prime_slow_func)
+    }, error = function(e) NA_real_)
+    
+    abs_dev_fast_prime <- tryCatch({
+      absolute_deviation(t_f = max(t_prime),
+                         t_0 = burn_in_time,
+                         N_func = N_prime_dynamic_func,
+                         m_func = K_prime_fast_func)
+    }, error = function(e) NA_real_)
+    
+    if (!is.finite(abs_dev_slow_prime)) abs_dev_slow_prime <- NA_real_
+    if (!is.finite(abs_dev_fast_prime)) abs_dev_fast_prime <- NA_real_
+    
+    # Calculate speed metric
+    speed <- NA_real_
+    if (is.finite(abs_dev_fast_prime) && is.finite(abs_dev_slow_prime)) {
+      denominator <- abs_dev_fast_prime + abs_dev_slow_prime
+      if (denominator > 0) {
+        speed <- abs_dev_slow_prime / denominator
+      } else {
+        speed <- 0
+      }
+    }
+    
+    if (is.finite(speed)) {
+      speed <- max(0, min(1, speed))
+    }
+    
+    # Return results
+    return(data.frame(
+      P_offset = P_offset,
+      P_amp = P_amp,
+      P_time = P_time,
+      E_N_prime = E_N_prime,
+      speed = speed,
+      abs_dev_slow = abs_dev_slow_prime,
+      abs_dev_fast = abs_dev_fast_prime,
+      integral_P_time_u = integral_result
+    ))
+    
+  }, error = function(e) {
+    # Return NA values for failed simulations (silently)
+    return(data.frame(
+      P_offset = P_offset,
+      P_amp = P_amp,
+      P_time = P_time,
+      E_N_prime = NA_real_,
+      speed = NA_real_,
+      abs_dev_slow = NA_real_,
+      abs_dev_fast = NA_real_,
+      integral_P_time_u = integral_result
+    ))
+  })
 }
-
 # Function to create heatmap for a specific P_offset value
 create_heatmap <- function(data, metric, title_prefix, color_palette = "viridis") {
   # Determine appropriate limits based on metric
